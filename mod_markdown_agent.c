@@ -196,25 +196,42 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
         ctx   = apr_pcalloc(r->pool, sizeof(mma_filter_ctx));
         ctx->accum = apr_brigade_create(r->pool, f->c->bucket_alloc);
         f->ctx = ctx;
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                      "mod_markdown_agent: filter invoked for %s "
+                      "(content-type: %s)",
+                      r->uri, r->content_type ? r->content_type : "(null)");
     }
 
-    /* Walk the incoming brigade */
+    /* Walk the incoming brigade, reading each data bucket into our
+     * accumulation brigade.  We must apr_bucket_read() transient buckets
+     * (common with chunked/dynamic responses) before they go out of scope. */
     for (b = APR_BRIGADE_FIRST(bb);
          b != APR_BRIGADE_SENTINEL(bb);
-         b = APR_BUCKET_NEXT(b))
+         b = APR_BRIGADE_FIRST(bb))
     {
         if (APR_BUCKET_IS_EOS(b)) {
             ctx->seen_eos = 1;
+            apr_bucket_delete(b);
             break;
         }
         if (APR_BUCKET_IS_FLUSH(b)) {
-            /* Don't flush mid-accumulation — we need the full document */
+            apr_bucket_delete(b);
             continue;
         }
+        /* Read the bucket data (materializes transient buckets) */
+        const char *data;
+        apr_size_t  len;
+        rv = apr_bucket_read(b, &data, &len, APR_BLOCK_READ);
+        if (rv != APR_SUCCESS) {
+            apr_bucket_delete(b);
+            continue;
+        }
+        /* Copy into a heap bucket in our accumulation brigade */
+        APR_BRIGADE_INSERT_TAIL(ctx->accum,
+            apr_bucket_heap_create(data, len, NULL,
+                                   f->c->bucket_alloc));
+        apr_bucket_delete(b);
     }
-
-    /* Move all non-EOS buckets into our accumulation brigade */
-    APR_BRIGADE_CONCAT(ctx->accum, bb);
 
     if (!ctx->seen_eos) {
         /* Need more data — return OK without passing anything downstream */
@@ -228,6 +245,18 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     char       *html_buf = NULL;
 
     rv = apr_brigade_pflatten(ctx->accum, &html_buf, &html_len, r->pool);
+
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                  "mod_markdown_agent: flattened %"APR_SIZE_T_FMT
+                  " bytes from brigade (rv=%d, first bytes: %s)",
+                  html_len, rv,
+                  (html_len >= 4)
+                  ? apr_psprintf(r->pool, "%02x %02x %02x %02x",
+                      (unsigned char)html_buf[0],
+                      (unsigned char)html_buf[1],
+                      (unsigned char)html_buf[2],
+                      (unsigned char)html_buf[3])
+                  : "(too short)");
     if (rv != APR_SUCCESS) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
                       "mod_markdown_agent: brigade flatten failed");
@@ -292,6 +321,11 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     apr_size_t  md_len  = 0;
     char       *md_buf  = html2md_convert(r->pool, html_buf, html_len,
                                            base_url, &opts, &md_len);
+
+    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                  "mod_markdown_agent: convert returned %s, md_len=%"
+                  APR_SIZE_T_FMT,
+                  md_buf ? "ok" : "NULL", md_len);
 
     if (!md_buf) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
