@@ -35,6 +35,7 @@ typedef struct {
     int links;          /* MarkdownAgentLinks On|Off    */
     int images;         /* MarkdownAgentImages On|Off   */
     int token_header;   /* MarkdownAgentTokenHeader On|Off */
+    int title_as_h1;    /* MarkdownAgentTitleH1 On|Off     */
 } mma_dir_conf;
 
 /* Filter name used with ap_register_output_filter / ap_add_output_filter */
@@ -62,6 +63,7 @@ static void *mma_create_dir_conf(apr_pool_t *p, char *path)
     conf->links        = -1;
     conf->images       = -1;
     conf->token_header = -1;
+    conf->title_as_h1  = -1;
     return conf;
 }
 
@@ -80,6 +82,7 @@ static void *mma_merge_dir_conf(apr_pool_t *p, void *base, void *add)
     MERGE_FLAG(child, parent, links);
     MERGE_FLAG(child, parent, images);
     MERGE_FLAG(child, parent, token_header);
+    MERGE_FLAG(child, parent, title_as_h1);
 
     return merged;
 }
@@ -112,6 +115,11 @@ static const char *cmd_token_header(cmd_parms *cmd, void *dcfg, int flag)
     ((mma_dir_conf *)dcfg)->token_header = flag;
     return NULL;
 }
+static const char *cmd_title_as_h1(cmd_parms *cmd, void *dcfg, int flag)
+{
+    ((mma_dir_conf *)dcfg)->title_as_h1 = flag;
+    return NULL;
+}
 
 static const command_rec mma_cmds[] = {
     AP_INIT_FLAG("MarkdownAgent",            cmd_enabled,      NULL, OR_OPTIONS,
@@ -124,6 +132,8 @@ static const command_rec mma_cmds[] = {
                  "Include images in markdown output (On|Off)"),
     AP_INIT_FLAG("MarkdownAgentTokenHeader", cmd_token_header, NULL, OR_OPTIONS,
                  "Emit x-markdown-tokens response header (On|Off)"),
+    AP_INIT_FLAG("MarkdownAgentTitleH1",    cmd_title_as_h1,  NULL, OR_OPTIONS,
+                 "Emit HTML <title> as # heading before body (On|Off)"),
     { NULL }
 };
 
@@ -220,6 +230,7 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     opts.extract      = (conf->extract      == 1);
     opts.links        = (conf->links        != 0);  /* On by default */
     opts.images       = (conf->images       != 0);  /* On by default */
+    opts.title_as_h1  = (conf->title_as_h1  == 1);
 
     /* Convert HTML → Markdown */
     apr_size_t  md_len  = 0;

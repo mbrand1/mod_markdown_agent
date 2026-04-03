@@ -863,6 +863,32 @@ char *html2md_convert(apr_pool_t         *pool,
         .last_was_nl = 1,   /* treat start-of-output as "after newline" */
     };
 
+    /* If title_as_h1 is set, find <title> in <head> and emit as # heading
+     * before walking the body. We do this here because <head> is in
+     * DROP_TAGS and will be skipped by the normal walk. */
+    if (opts && opts->title_as_h1) {
+        /* Search for <head> -> <title> */
+        for (xmlNode *child = root->children; child; child = child->next) {
+            if (child->type == XML_ELEMENT_NODE && child->name
+                && strcasecmp((const char *)child->name, "head") == 0) {
+                for (xmlNode *hc = child->children; hc; hc = hc->next) {
+                    if (hc->type == XML_ELEMENT_NODE && hc->name
+                        && strcasecmp((const char *)hc->name, "title") == 0) {
+                        xmlChar *title = xmlNodeGetContent(hc);
+                        if (title && *title) {
+                            emit(&ctx, "# ");
+                            emit(&ctx, (char *)title);
+                            emit(&ctx, "\n\n");
+                        }
+                        xmlFree(title);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
     walk_node(&ctx, root);
 
     xmlFreeDoc(doc);
