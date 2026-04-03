@@ -30,17 +30,24 @@ Pure C. No npm, no runtime, no interpreter.
 ## Build & Install
 
 ```bash
+./configure
 make
 sudo make install
-/usr/local/apache/bin/apachectl configtest
-sudo /usr/local/apache/bin/apachectl graceful
+sudo apachectl graceful
 ```
 
-Adjust `APXS` and `LIBXML2_INC` in the Makefile if your paths differ:
+`configure` auto-detects `apxs` and `libxml2`. If they're in
+non-standard locations:
 
-```makefile
-APXS        = /usr/local/apache/bin/apxs
-LIBXML2_INC = /usr/include/libxml2
+```bash
+./configure --with-apxs=/usr/local/apache/bin/apxs \
+            --with-libxml2=/usr/local/include/libxml2
+```
+
+To create a source tarball for distribution:
+
+```bash
+make dist    # produces mod_markdown_agent-VERSION.tar.gz
 ```
 
 ## Configuration
