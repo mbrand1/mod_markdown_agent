@@ -24,3 +24,13 @@ ENV/
 *.so
 *.slo
 .libs/
+
+# Autoconf
+autom4te.cache/
+config.log
+config.status
+Makefile
+Makefile.orig
+
+# Dist
+*.tar.gz
