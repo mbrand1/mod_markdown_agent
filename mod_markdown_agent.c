@@ -36,6 +36,7 @@ typedef struct {
     int images;         /* MarkdownAgentImages On|Off   */
     int token_header;   /* MarkdownAgentTokenHeader On|Off */
     int title_as_h1;    /* MarkdownAgentTitleH1 On|Off     */
+    const char *content_usage; /* MarkdownAgentContentUsage string */
 } mma_dir_conf;
 
 /* Filter name used with ap_register_output_filter / ap_add_output_filter */
@@ -64,6 +65,7 @@ static void *mma_create_dir_conf(apr_pool_t *p, char *path)
     conf->images       = -1;
     conf->token_header = -1;
     conf->title_as_h1  = -1;
+    conf->content_usage = NULL;
     return conf;
 }
 
@@ -83,6 +85,8 @@ static void *mma_merge_dir_conf(apr_pool_t *p, void *base, void *add)
     MERGE_FLAG(child, parent, images);
     MERGE_FLAG(child, parent, token_header);
     MERGE_FLAG(child, parent, title_as_h1);
+    merged->content_usage = child->content_usage
+                          ? child->content_usage : parent->content_usage;
 
     return merged;
 }
@@ -120,6 +124,12 @@ static const char *cmd_title_as_h1(cmd_parms *cmd, void *dcfg, int flag)
     ((mma_dir_conf *)dcfg)->title_as_h1 = flag;
     return NULL;
 }
+static const char *cmd_content_usage(cmd_parms *cmd, void *dcfg,
+                                     const char *val)
+{
+    ((mma_dir_conf *)dcfg)->content_usage = val;
+    return NULL;
+}
 
 static const command_rec mma_cmds[] = {
     AP_INIT_FLAG("MarkdownAgent",            cmd_enabled,      NULL, OR_OPTIONS,
@@ -134,6 +144,8 @@ static const command_rec mma_cmds[] = {
                  "Emit x-markdown-tokens response header (On|Off)"),
     AP_INIT_FLAG("MarkdownAgentTitleH1",    cmd_title_as_h1,  NULL, OR_OPTIONS,
                  "Emit HTML <title> as # heading before body (On|Off)"),
+    AP_INIT_TAKE1("MarkdownAgentContentUsage", cmd_content_usage, NULL, OR_OPTIONS,
+                  "Content-Usage header value (IETF aipref, e.g. \"bots=y, train-ai=y\")"),
     { NULL }
 };
 
@@ -305,6 +317,10 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
         apr_table_set(r->headers_out, "x-markdown-tokens",
                       apr_psprintf(r->pool, "%" APR_SIZE_T_FMT, tokens));
     }
+
+    /* Emit Content-Usage header (IETF aipref) if configured */
+    if (conf->content_usage)
+        apr_table_set(r->headers_out, "Content-Usage", conf->content_usage);
 
     /* Content-Length must reflect the new body */
     ap_set_content_length(r, (apr_off_t)md_len);
