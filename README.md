@@ -45,7 +45,7 @@ LIBXML2_INC = /usr/include/libxml2
 
 ## Configuration
 
-The module provides five directives, all `On`/`Off` flags valid in
+The module provides six directives, all `On`/`Off` flags valid in
 `<Directory>`, `<Location>`, and `<VirtualHost>` contexts:
 
 | Directive | Default | Description |
@@ -55,6 +55,7 @@ The module provides five directives, all `On`/`Off` flags valid in
 | `MarkdownAgentLinks` | On | Include `[text](url)` links |
 | `MarkdownAgentImages` | On | Include `![alt](src)` images |
 | `MarkdownAgentTokenHeader` | Off | Emit `x-markdown-tokens` response header |
+| `MarkdownAgentTitleH1` | Off | Emit HTML `<title>` as leading `# heading` |
 
 Example:
 
@@ -80,6 +81,9 @@ make test URL=http://localhost/yourpage.html
 
 # Or manually:
 curl -s -H "Accept: text/markdown" http://localhost/yourpage.html
+
+# Regression tests — compare live output against expected markdown
+make regression BASE_URL=https://yourserver.com
 ```
 
 ## How It Works
@@ -107,8 +111,8 @@ static files, CGI, proxied backends, PHP, etc.
 | `<ul>` / `<ol>` / `<li>` | `- ` / `1. ` with nested indentation |
 | `<hr>` | `---` |
 | `<br>` | Two trailing spaces + newline |
-| `<blockquote>` | *In progress* |
-| `<table>` | *In progress* |
+| `<blockquote>` | `> ` prefixed lines (nested supported) |
+| `<table>` | GFM pipe table with aligned columns |
 
 ### Inline Elements
 
