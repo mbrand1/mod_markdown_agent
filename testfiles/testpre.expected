@@ -1,0 +1,66 @@
+
+# Code Block Tests
+
+## Python with language class
+
+```python
+def hello():
+    print("Hello, world!")
+
+for i in range(10):
+    hello()
+```
+
+## JavaScript with language class
+
+```js
+function greet(name) {
+    return `Hello, ${name}!`;
+}
+```
+
+## Code block with no language
+
+```
+just some plain code
+  with indentation preserved
+    and more indentation
+```
+
+## Bare pre (no code element)
+
+```
+This is preformatted text
+  without a code wrapper
+    just raw pre
+```
+
+## Paragraph after code
+
+This paragraph should be separated from the code block above by a blank line.
+
+# Blockquote Tests
+
+## Simple blockquote
+
+> This is a quoted paragraph.
+
+## Multi-paragraph blockquote
+
+> First quoted paragraph.
+> 
+> Second quoted paragraph with **bold** text.
+
+## Nested blockquote
+
+> Outer quote.
+> 
+> > Inner quote.
+
+## Blockquote with code
+
+> Here is some code:
+> 
+> ```python
+> x = 42
+> ```

@@ -1,0 +1,24 @@
+
+# Inline Spacing Tests
+
+Word with **bold** text after.
+
+Word with *italic* text after.
+
+Word with ~~deleted~~ text after.
+
+Word with `inline code` text after.
+
+Word with [a link](http://example.com) text after.
+
+Word with ~subscript~ text after.
+
+Word with ^superscript^ text after.
+
+Multiple **bold** and *italic* in one line.
+
+**Bold** at the start of a paragraph.
+
+Bold at the **end**
+
+> Quoted text with **bold** inside a blockquote.

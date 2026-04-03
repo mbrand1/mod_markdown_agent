@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head><title>Pre/Code Test</title></head>
+<body>
+
+<h1>Code Block Tests</h1>
+
+<h2>Python with language class</h2>
+<pre><code class="language-python">def hello():
+    print("Hello, world!")
+
+for i in range(10):
+    hello()
+</code></pre>
+
+<h2>JavaScript with language class</h2>
+<pre><code class="language-js">function greet(name) {
+    return `Hello, ${name}!`;
+}
+</code></pre>
+
+<h2>Code block with no language</h2>
+<pre><code>just some plain code
+  with indentation preserved
+    and more indentation
+</code></pre>
+
+<h2>Bare pre (no code element)</h2>
+<pre>This is preformatted text
+  without a code wrapper
+    just raw pre</pre>
+
+<h2>Paragraph after code</h2>
+<p>This paragraph should be separated from the code block above by a blank line.</p>
+
+<h1>Blockquote Tests</h1>
+
+<h2>Simple blockquote</h2>
+<blockquote><p>This is a quoted paragraph.</p></blockquote>
+
+<h2>Multi-paragraph blockquote</h2>
+<blockquote>
+<p>First quoted paragraph.</p>
+<p>Second quoted paragraph with <strong>bold</strong> text.</p>
+</blockquote>
+
+<h2>Nested blockquote</h2>
+<blockquote>
+<p>Outer quote.</p>
+<blockquote><p>Inner quote.</p></blockquote>
+</blockquote>
+
+<h2>Blockquote with code</h2>
+<blockquote>
+<p>Here is some code:</p>
+<pre><code class="language-python">x = 42</code></pre>
+</blockquote>
+
+</body>
+</html>

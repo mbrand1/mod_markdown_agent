@@ -17,7 +17,7 @@ SRCS        = mod_markdown_agent.c html2md.c
 # apxs handles -I$(AP_INCLUDEDIR) and most flags automatically.
 # We pass our extra includes and libs via -Wc and -Wl.
 
-.PHONY: all install clean reload
+.PHONY: all install clean reload regression
 
 all:
 	$(APXS) -c \
@@ -51,3 +51,36 @@ test:
 	@echo ""
 	@echo "--- Response body (first 40 lines) ---"
 	curl -s  -H "Accept: text/markdown" "$(URL)" | head -40
+
+# -----------------------------------------------------------------------
+# Regression tests: compare live output against known-good expected files
+# Usage: make regression BASE_URL=https://scooby.netsville.com
+# Requires test HTML files deployed to the docroot.
+# -----------------------------------------------------------------------
+BASE_URL = https://scooby.netsville.com
+TESTDIR  = testfiles
+
+regression:
+	@pass=0; fail=0; \
+	for html in $(TESTDIR)/*.html; do \
+		name=$$(basename $$html .html); \
+		expected="$(TESTDIR)/$$name.expected"; \
+		if [ ! -f "$$expected" ]; then \
+			echo "SKIP $$name (no .expected file)"; \
+			continue; \
+		fi; \
+		tmp=$$(mktemp); \
+		curl -s -H "Accept: text/markdown" "$(BASE_URL)/$$name.html" > "$$tmp"; \
+		if diff -u "$$expected" "$$tmp" > /dev/null 2>&1; then \
+			echo "PASS $$name"; \
+			pass=$$((pass + 1)); \
+		else \
+			echo "FAIL $$name"; \
+			diff -u "$$expected" "$$tmp"; \
+			fail=$$((fail + 1)); \
+		fi; \
+		rm -f "$$tmp"; \
+	done; \
+	echo ""; \
+	echo "$$pass passed, $$fail failed"; \
+	[ $$fail -eq 0 ]
