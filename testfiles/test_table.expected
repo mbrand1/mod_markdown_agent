@@ -1,0 +1,31 @@
+
+# Table Tests
+
+## Simple table with thead
+
+| Name    | Age | City          |
+| ------- | --- | ------------- |
+| Alice   | 30  | New York      |
+| Bob     | 25  | San Francisco |
+| Charlie | 35  | Chicago       |
+
+## Table without thead
+
+| One  | Two  | Three |
+| ---- | ---- | ----- |
+| Four | Five | Six   |
+
+## Table with inline formatting
+
+| Feature       | Status   |
+| ------------- | -------- |
+| **Headings**  | Complete |
+| *Blockquote*  | Complete |
+| `code blocks` | Complete |
+
+## Table with links
+
+| Project | URL                                                     |
+| ------- | ------------------------------------------------------- |
+| Apache  | [httpd.apache.org](https://httpd.apache.org)            |
+| libxml2 | [GNOME/libxml2](https://gitlab.gnome.org/GNOME/libxml2) |

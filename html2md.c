@@ -484,12 +484,158 @@ static void handle_li(walk_ctx *ctx, xmlNode *node)
     ensure_newline(ctx);
 }
 
+/* ---- Table helpers ---- */
+
+#define MAX_TABLE_COLS 64
+#define MAX_TABLE_ROWS 512
+
+/* Render a cell's children into a flat string via sub-buffer */
+static char *render_cell(walk_ctx *ctx, xmlNode *cell)
+{
+    out_buf tmp;
+    buf_init(&tmp, ctx->out->pool);
+
+    out_buf *saved_out = ctx->out;
+    int      saved_nl  = ctx->last_was_nl;
+    char     saved_lc  = ctx->last_char;
+
+    ctx->out         = &tmp;
+    ctx->last_was_nl = 1;
+    ctx->last_char   = '\0';
+
+    walk_children(ctx, cell);
+
+    ctx->out         = saved_out;
+    ctx->last_was_nl = saved_nl;
+    ctx->last_char   = saved_lc;
+
+    /* Flatten and strip leading/trailing whitespace */
+    char *text = buf_flatten(&tmp);
+    while (*text && isspace((unsigned char)*text)) text++;
+    char *end = text + strlen(text);
+    while (end > text && isspace((unsigned char)end[-1])) end--;
+    *end = '\0';
+
+    /* Replace any newlines with spaces (cell text must be single-line) */
+    for (char *p = text; *p; p++)
+        if (*p == '\n') *p = ' ';
+
+    return text;
+}
+
+/* Collect <tr> elements from a container (table, thead, tbody, tfoot) */
+static int collect_rows(xmlNode *parent, xmlNode **rows, int max_rows)
+{
+    int count = 0;
+    for (xmlNode *child = parent->children; child && count < max_rows;
+         child = child->next) {
+        if (child->type != XML_ELEMENT_NODE || !child->name)
+            continue;
+        const char *tag = (const char *)child->name;
+        if (strcasecmp(tag, "tr") == 0)
+            rows[count++] = child;
+        else if (strcasecmp(tag, "thead") == 0 ||
+                 strcasecmp(tag, "tbody") == 0 ||
+                 strcasecmp(tag, "tfoot") == 0)
+            count += collect_rows(child, rows + count, max_rows - count);
+    }
+    return count;
+}
+
 static void handle_table(walk_ctx *ctx, xmlNode *node)
 {
-    /* TODO: GFM pipe table — this one is involved, saving for later */
     ensure_blank_line(ctx);
-    walk_children(ctx, node);
-    ensure_blank_line(ctx);
+
+    /* Collect all <tr> elements */
+    xmlNode *rows[MAX_TABLE_ROWS];
+    int nrows = collect_rows(node, rows, MAX_TABLE_ROWS);
+    if (nrows == 0) {
+        walk_children(ctx, node);
+        ensure_blank_line(ctx);
+        return;
+    }
+
+    /* First pass: render all cells, find column count and widths */
+    int ncols = 0;
+    char **cells[MAX_TABLE_ROWS];
+    int    row_ncols[MAX_TABLE_ROWS];
+    int    col_width[MAX_TABLE_COLS];
+
+    memset(col_width, 0, sizeof(col_width));
+
+    for (int r = 0; r < nrows; r++) {
+        int c = 0;
+        /* Count cells in this row */
+        for (xmlNode *cell = rows[r]->children; cell && c < MAX_TABLE_COLS;
+             cell = cell->next) {
+            if (cell->type != XML_ELEMENT_NODE || !cell->name)
+                continue;
+            const char *tag = (const char *)cell->name;
+            if (strcasecmp(tag, "th") == 0 || strcasecmp(tag, "td") == 0)
+                c++;
+        }
+        row_ncols[r] = c;
+        if (c > ncols) ncols = c;
+
+        cells[r] = apr_palloc(ctx->out->pool, c * sizeof(char *));
+
+        /* Render each cell */
+        c = 0;
+        for (xmlNode *cell = rows[r]->children; cell && c < MAX_TABLE_COLS;
+             cell = cell->next) {
+            if (cell->type != XML_ELEMENT_NODE || !cell->name)
+                continue;
+            const char *tag = (const char *)cell->name;
+            if (strcasecmp(tag, "th") != 0 && strcasecmp(tag, "td") != 0)
+                continue;
+
+            cells[r][c] = render_cell(ctx, cell);
+            int len = (int)strlen(cells[r][c]);
+            if (len > col_width[c])
+                col_width[c] = len;
+            c++;
+        }
+    }
+
+    /* Ensure minimum column width of 3 (for "---" separator) */
+    for (int c = 0; c < ncols; c++)
+        if (col_width[c] < 3) col_width[c] = 3;
+
+    /* Emit header row (first row) */
+    emit(ctx, "|");
+    for (int c = 0; c < ncols; c++) {
+        emit(ctx, " ");
+        const char *text = (c < row_ncols[0]) ? cells[0][c] : "";
+        emit(ctx, text);
+        /* Pad to column width */
+        int pad = col_width[c] - (int)strlen(text);
+        for (int i = 0; i < pad; i++) emit(ctx, " ");
+        emit(ctx, " |");
+    }
+    emit(ctx, "\n");
+
+    /* Emit separator row */
+    emit(ctx, "|");
+    for (int c = 0; c < ncols; c++) {
+        emit(ctx, " ");
+        for (int i = 0; i < col_width[c]; i++) emit(ctx, "-");
+        emit(ctx, " |");
+    }
+    emit(ctx, "\n");
+
+    /* Emit data rows (starting from row 1) */
+    for (int r = 1; r < nrows; r++) {
+        emit(ctx, "|");
+        for (int c = 0; c < ncols; c++) {
+            emit(ctx, " ");
+            const char *text = (c < row_ncols[r]) ? cells[r][c] : "";
+            emit(ctx, text);
+            int pad = col_width[c] - (int)strlen(text);
+            for (int i = 0; i < pad; i++) emit(ctx, " ");
+            emit(ctx, " |");
+        }
+        emit(ctx, "\n");
+    }
 }
 
 /* =========================================================================
