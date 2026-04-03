@@ -9,14 +9,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test
 
 ```bash
+./configure                                                   # auto-detect apxs + libxml2
 make                                                          # compile via apxs
 sudo make install                                             # install .so + add LoadModule
 /usr/local/apache/bin/apachectl configtest                    # verify config
 sudo /usr/local/apache/bin/apachectl graceful                 # reload Apache
 make test URL=https://scooby.netsville.com/testfile.html      # smoke test with curl
 make regression                                               # run all regression tests
+make dist                                                     # create source tarball
 make clean                                                    # remove build artifacts
+make distclean                                                # remove all generated files
 ```
+
+Configure options: `--with-apxs=PATH`, `--with-libxml2=PATH`.
 
 Build dependencies: libxml2 (`-lxml2`, headers at `/usr/include/libxml2`), APR (bundled with Apache).
 
