@@ -189,6 +189,7 @@ typedef struct {
     int                list_index;    /* counter for ordered lists */
     int                in_pre;        /* inside <pre> — preserve whitespace */
     int                last_was_nl;   /* avoid double blank lines */
+    char               last_char;     /* last character written to output, 0 at start */
 } walk_ctx;
 
 /* =========================================================================
@@ -200,6 +201,27 @@ static void walk_children(walk_ctx *ctx, xmlNode *node);
 /* =========================================================================
  * Output helpers
  * ========================================================================= */
+
+ /* Collapse 3+ consecutive newlines down to 2 (one blank line max) */
+static char *normalize_newlines(apr_pool_t *pool, const char *s)
+{
+    apr_size_t len = strlen(s);
+    char *out = apr_palloc(pool, len + 1);
+    char *dst = out;
+    int nl_count = 0;
+
+    for (const char *src = s; *src; src++) {
+        if (*src == '\n') {
+            nl_count++;
+            if (nl_count <= 2) *dst++ = '\n';
+        } else {
+            nl_count = 0;
+            *dst++ = *src;
+        }
+    }
+    *dst = '\0';
+    return out;
+}
 
 /* Ensure output ends with at least one newline before emitting more */
 static void ensure_newline(walk_ctx *ctx)
@@ -222,7 +244,9 @@ static void emit(walk_ctx *ctx, const char *s)
 {
     if (!s || !*s) return;
     buf_puts(ctx->out, s);
-    ctx->last_was_nl = (s[strlen(s) - 1] == '\n');
+    apr_size_t len   = strlen(s);
+    ctx->last_char   = s[len - 1];
+    ctx->last_was_nl = (ctx->last_char == '\n');
 }
 
 /* =========================================================================
@@ -246,7 +270,12 @@ static void emit_text(walk_ctx *ctx, const xmlChar *raw)
     /* Collapse whitespace */
     char *buf = strdup(s);       /* temp — not pool alloc, freed below */
     char *dst = buf;
-    int   was_ws = 1;            /* trim leading whitespace */
+
+    /* Only trim leading whitespace if previous output ended with whitespace
+     * (or we're at the very start). Otherwise preserve the leading space
+     * so "word <em>text</em> more" doesn't become "word**text**more". */
+    int  was_ws = (ctx->last_char == '\0' || ctx->last_char == '\n'
+                || ctx->last_char == ' ');
 
     for (const char *src = s; *src; src++) {
         if (isspace((unsigned char)*src)) {
@@ -285,11 +314,9 @@ static void handle_heading(walk_ctx *ctx, xmlNode *node, int level)
 {
     /* emit "## " prefix (level hashes + space), walk children, newline */
     ensure_blank_line(ctx);
-
     for (int i = 0; i < level; i++)
-        buf_puts(ctx->out, "#");
-    buf_puts(ctx->out, " ");
-    ctx->last_was_nl = 0;
+        emit(ctx, "#");
+    emit(ctx, " ");          /* now last_char = ' ', last_was_nl = 0 */
 
     /* emit the text */
     walk_children(ctx, node);
@@ -298,9 +325,6 @@ static void handle_heading(walk_ctx *ctx, xmlNode *node, int level)
 
 static void handle_p(walk_ctx *ctx, xmlNode *node)
 {
-    /* DEBUGGING */
-    fprintf(stderr, "DEBUG handle_p: children=%s\n",
-        node->children ? (char*)node->children->content : "(none)");
     /* ensure_blank_line, walk_children, ensure_blank_line */
     ensure_blank_line(ctx);
     ctx->last_was_nl = 0;
@@ -318,12 +342,54 @@ static void handle_blockquote(walk_ctx *ctx, xmlNode *node)
 
 static void handle_pre(walk_ctx *ctx, xmlNode *node)
 {
-    /* TODO: emit fenced code block ``` lang\n...\n``` */
     ensure_blank_line(ctx);
+
+    /* Detect language from <pre><code class="language-xxx"> */
+    const char *lang = NULL;
+    xmlNode *code_child = NULL;
+
+    for (xmlNode *c = node->children; c; c = c->next) {
+        if (c->type == XML_ELEMENT_NODE
+            && c->name && strcasecmp((const char *)c->name, "code") == 0) {
+            code_child = c;
+            break;
+        }
+    }
+
+    if (code_child) {
+        xmlChar *cls = xmlGetProp(code_child, BAD_CAST "class");
+        if (cls) {
+            /* Look for "language-" prefix in class list */
+            const char *p = strcasestr((char *)cls, "language-");
+            if (p) {
+                p += 9;   /* skip "language-" */
+                /* Extract until space or end of string */
+                const char *end = p;
+                while (*end && !isspace((unsigned char)*end))
+                    end++;
+                if (end > p)
+                    lang = apr_pstrmemdup(ctx->out->pool, p, end - p);
+            }
+            xmlFree(cls);
+        }
+    }
+
+    emit(ctx, "```");
+    if (lang)
+        emit(ctx, lang);
+    emit(ctx, "\n");
+
     ctx->in_pre = 1;
-    walk_children(ctx, node);
+    /* If we found a <code> child, walk its children directly
+     * to avoid the inline code handler wrapping it in backticks */
+    if (code_child)
+        walk_children(ctx, code_child);
+    else
+        walk_children(ctx, node);
     ctx->in_pre = 0;
-    ensure_blank_line(ctx);
+
+    ensure_newline(ctx);
+    emit(ctx, "```\n");
 }
 
 static void handle_hr(walk_ctx *ctx)
@@ -607,7 +673,7 @@ char *html2md_convert(apr_pool_t         *pool,
 
     xmlFreeDoc(doc);
 
-    char *result = buf_flatten(&buf);
+    char *result = normalize_newlines(pool, buf_flatten(&buf));
     if (out_len) *out_len = strlen(result);
     return result;
 }
