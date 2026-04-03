@@ -197,6 +197,7 @@ typedef struct {
  * ========================================================================= */
 static void walk_node(walk_ctx *ctx, xmlNode *node);
 static void walk_children(walk_ctx *ctx, xmlNode *node);
+static void emit(walk_ctx *ctx, const char *s);
 
 /* =========================================================================
  * Output helpers
@@ -226,17 +227,15 @@ static char *normalize_newlines(apr_pool_t *pool, const char *s)
 /* Ensure output ends with at least one newline before emitting more */
 static void ensure_newline(walk_ctx *ctx)
 {
-    if (!ctx->last_was_nl) {
-        buf_puts(ctx->out, "\n");
-        ctx->last_was_nl = 1;
-    }
+    if (!ctx->last_was_nl)
+        emit(ctx, "\n");
 }
 
 /* Ensure output ends with a blank line (paragraph separator) */
 static void ensure_blank_line(walk_ctx *ctx)
 {
     ensure_newline(ctx);
-    buf_puts(ctx->out, "\n");
+    emit(ctx, "\n");
 }
 
 /* Write a string, tracking whether we ended on a newline */
@@ -247,6 +246,14 @@ static void emit(walk_ctx *ctx, const char *s)
     apr_size_t len   = strlen(s);
     ctx->last_char   = s[len - 1];
     ctx->last_was_nl = (ctx->last_char == '\n');
+}
+
+/* Emit a space if needed before an inline delimiter — compensates for
+ * emit_text() trimming trailing spaces before inline elements */
+static void ensure_space_before_inline(walk_ctx *ctx)
+{
+    if (ctx->last_char != '\0' && !isspace((unsigned char)ctx->last_char))
+        emit(ctx, " ");
 }
 
 /* =========================================================================
@@ -325,19 +332,52 @@ static void handle_heading(walk_ctx *ctx, xmlNode *node, int level)
 
 static void handle_p(walk_ctx *ctx, xmlNode *node)
 {
-    /* ensure_blank_line, walk_children, ensure_blank_line */
     ensure_blank_line(ctx);
-    ctx->last_was_nl = 0;
     walk_children(ctx, node);
     ensure_blank_line(ctx);
 }
 
 static void handle_blockquote(walk_ctx *ctx, xmlNode *node)
 {
-    /* TODO: prefix every line with "> " */
     ensure_blank_line(ctx);
+
+    /* Capture child output into a temporary buffer */
+    out_buf  tmp;
+    buf_init(&tmp, ctx->out->pool);
+
+    out_buf *saved_out = ctx->out;
+
+    ctx->out         = &tmp;
+    ctx->last_was_nl = 1;
+    ctx->last_char   = '\0';
+
     walk_children(ctx, node);
-    ensure_blank_line(ctx);
+
+    /* Restore original buffer (but not last_char/last_was_nl —
+     * those should reflect what we're about to emit) */
+    ctx->out = saved_out;
+
+    /* Flatten, normalize, and trim leading/trailing newlines */
+    char *text = normalize_newlines(ctx->out->pool, buf_flatten(&tmp));
+    while (*text == '\n') text++;
+    char *end = text + strlen(text);
+    while (end > text && end[-1] == '\n') end--;
+    *end = '\0';
+
+    /* Prefix each line with "> " */
+    char *line = text;
+    for (char *p = text; ; p++) {
+        if (*p == '\n' || *p == '\0') {
+            char saved = *p;
+            *p = '\0';
+            emit(ctx, "> ");
+            emit(ctx, line);
+            emit(ctx, "\n");
+            if (saved == '\0')
+                break;
+            line = p + 1;
+        }
+    }
 }
 
 static void handle_pre(walk_ctx *ctx, xmlNode *node)
@@ -459,6 +499,7 @@ static void handle_table(walk_ctx *ctx, xmlNode *node)
 
 static void handle_strong(walk_ctx *ctx, xmlNode *node)
 {
+    ensure_space_before_inline(ctx);
     emit(ctx, "**");
     walk_children(ctx, node);
     emit(ctx, "**");
@@ -466,6 +507,7 @@ static void handle_strong(walk_ctx *ctx, xmlNode *node)
 
 static void handle_em(walk_ctx *ctx, xmlNode *node)
 {
+    ensure_space_before_inline(ctx);
     emit(ctx, "*");
     walk_children(ctx, node);
     emit(ctx, "*");
@@ -473,6 +515,7 @@ static void handle_em(walk_ctx *ctx, xmlNode *node)
 
 static void handle_del(walk_ctx *ctx, xmlNode *node)
 {
+    ensure_space_before_inline(ctx);
     emit(ctx, "~~");
     walk_children(ctx, node);
     emit(ctx, "~~");
@@ -480,6 +523,7 @@ static void handle_del(walk_ctx *ctx, xmlNode *node)
 
 static void handle_code_inline(walk_ctx *ctx, xmlNode *node)
 {
+    ensure_space_before_inline(ctx);
     emit(ctx, "`");
     ctx->in_pre = 1;   /* preserve whitespace inside inline code */
     walk_children(ctx, node);
@@ -489,6 +533,7 @@ static void handle_code_inline(walk_ctx *ctx, xmlNode *node)
 
 static void handle_sub(walk_ctx *ctx, xmlNode *node)
 {
+    ensure_space_before_inline(ctx);
     emit(ctx, "~");
     walk_children(ctx, node);
     emit(ctx, "~");
@@ -496,6 +541,7 @@ static void handle_sub(walk_ctx *ctx, xmlNode *node)
 
 static void handle_sup(walk_ctx *ctx, xmlNode *node)
 {
+    ensure_space_before_inline(ctx);
     emit(ctx, "^");
     walk_children(ctx, node);
     emit(ctx, "^");
@@ -512,6 +558,7 @@ static void handle_a(walk_ctx *ctx, xmlNode *node)
         walk_children(ctx, node);
         return;
     }
+    ensure_space_before_inline(ctx);
     emit(ctx, "[");
     walk_children(ctx, node);
     emit(ctx, "](");
@@ -528,6 +575,7 @@ static void handle_img(walk_ctx *ctx, xmlNode *node)
     xmlChar *src = xmlGetProp(node, BAD_CAST "src");
     xmlChar *alt = xmlGetProp(node, BAD_CAST "alt");
 
+    ensure_space_before_inline(ctx);
     emit(ctx, "![");
     if (alt) emit(ctx, (char *)alt);
     emit(ctx, "](");

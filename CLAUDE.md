@@ -86,6 +86,7 @@ All are `FLAG` type (On/Off), valid in `<Directory>`, `<Location>`, `<VirtualHos
 - `title_as_h1` option (walk `<head>` for `<title>`)
 - Accept header q-value parsing (currently simple `strstr`)
 - Base URL for relative links (`htmlReadMemory()` base URL param is `NULL`)
+- Regression test suite: a set of HTML test files in the docroot with known-good expected Markdown output, to run after any parser change
 
 ## Design Notes
 
