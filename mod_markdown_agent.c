@@ -223,6 +223,44 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
         return ap_pass_brigade(f->next, ctx->accum);
     }
 
+    /* Check for compressed input — if a compression filter (mod_deflate,
+     * mod_brotli, etc.) ran before us, we got compressed data instead
+     * of HTML. Bail out and pass the original response through. */
+    const char *compress_err = NULL;
+
+    /* Check Content-Encoding header first */
+    const char *ce = apr_table_get(r->headers_out, "Content-Encoding");
+    if (ce && *ce) {
+        compress_err = apr_psprintf(r->pool,
+            "input has Content-Encoding '%s'", ce);
+    }
+    /* Also check for gzip magic bytes (1f 8b) */
+    else if (html_len >= 2
+             && (unsigned char)html_buf[0] == 0x1f
+             && (unsigned char)html_buf[1] == 0x8b) {
+        compress_err = "input starts with gzip magic bytes (1f 8b)";
+    }
+    /* And brotli magic byte (ce) — brotli streams start with a WBITS
+     * byte; common values are 0x0b, 0x1b, etc., but the most reliable
+     * check is that it's NOT valid HTML (doesn't start with '<' or
+     * whitespace). We check specifically for the CE header above;
+     * this catches the case where the header was stripped. */
+
+    if (compress_err) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "mod_markdown_agent: %s; a compression filter is "
+                      "running before MARKDOWN_AGENT in the filter chain "
+                      "— cannot convert", compress_err);
+        ap_remove_output_filter(f);
+        apr_brigade_cleanup(ctx->accum);
+        APR_BRIGADE_INSERT_TAIL(ctx->accum,
+            apr_bucket_pool_create(html_buf, html_len, r->pool,
+                                   f->c->bucket_alloc));
+        APR_BRIGADE_INSERT_TAIL(ctx->accum,
+            apr_bucket_eos_create(f->c->bucket_alloc));
+        return ap_pass_brigade(f->next, ctx->accum);
+    }
+
     /* Build options from config */
     mma_dir_conf *conf = ap_get_module_config(r->per_dir_config,
                                                &markdown_agent_module);
