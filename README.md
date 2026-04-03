@@ -52,8 +52,8 @@ make dist    # produces mod_markdown_agent-VERSION.tar.gz
 
 ## Configuration
 
-The module provides six directives, all `On`/`Off` flags valid in
-`<Directory>`, `<Location>`, and `<VirtualHost>` contexts:
+The module provides seven directives valid in `<Directory>`, `<Location>`,
+and `<VirtualHost>` contexts:
 
 | Directive | Default | Description |
 |---|---|---|
@@ -63,6 +63,7 @@ The module provides six directives, all `On`/`Off` flags valid in
 | `MarkdownAgentImages` | On | Include `![alt](src)` images |
 | `MarkdownAgentTokenHeader` | Off | Emit `x-markdown-tokens` response header |
 | `MarkdownAgentTitleH1` | Off | Emit HTML `<title>` as leading `# heading` |
+| `MarkdownAgentContentUsage` | *(unset)* | Emit `Content-Usage` header ([IETF aipref](https://datatracker.ietf.org/wg/aipref/about/)) |
 
 Example:
 
@@ -75,6 +76,7 @@ LoadModule markdown_agent_module modules/mod_markdown_agent.so
     MarkdownAgentLinks       On
     MarkdownAgentImages      Off
     MarkdownAgentTokenHeader On
+    MarkdownAgentContentUsage "bots=y, train-ai=y, ai-output=y, search=y"
 </Directory>
 ```
 
