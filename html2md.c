@@ -827,6 +827,7 @@ void html2md_cleanup(void)
 char *html2md_convert(apr_pool_t         *pool,
                       const char         *html,
                       apr_size_t          html_len,
+                      const char         *base_url,
                       const html2md_opts *opts,
                       apr_size_t         *out_len)
 {
@@ -838,8 +839,8 @@ char *html2md_convert(apr_pool_t         *pool,
     /* Parse — HTML_PARSE_RECOVER handles real-world malformed markup.
      * HTML_PARSE_NOERROR / NOWARNING suppress libxml2's stderr spam. */
     htmlDocPtr doc = htmlReadMemory(html, (int)html_len,
-                                    NULL,   /* URL (base) — TODO: pass r->uri */
-                                    NULL,   /* encoding — let libxml2 detect  */
+                                    base_url, /* URL (base) for relative links */
+                                    NULL,     /* encoding — let libxml2 detect */
                                     HTML_PARSE_RECOVER  |
                                     HTML_PARSE_NOERROR  |
                                     HTML_PARSE_NOWARNING);

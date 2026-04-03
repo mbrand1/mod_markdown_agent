@@ -232,10 +232,16 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     opts.images       = (conf->images       != 0);  /* On by default */
     opts.title_as_h1  = (conf->title_as_h1  == 1);
 
+    /* Build base URL for resolving relative links */
+    const char *scheme   = ap_http_scheme(r);
+    const char *hostname = r->hostname ? r->hostname : "localhost";
+    const char *base_url = apr_psprintf(r->pool, "%s://%s%s",
+                                        scheme, hostname, r->uri);
+
     /* Convert HTML → Markdown */
     apr_size_t  md_len  = 0;
     char       *md_buf  = html2md_convert(r->pool, html_buf, html_len,
-                                           &opts, &md_len);
+                                           base_url, &opts, &md_len);
 
     if (!md_buf) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,

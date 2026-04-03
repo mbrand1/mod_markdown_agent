@@ -1,0 +1,13 @@
+
+# Relative Links
+
+Absolute: [example.com](https://example.com/page)
+
+Site-relative: [contact page](/about/contact.html)
+
+Relative: [sibling page](sibling.html)
+
+Image relative: ![a photo](images/photo.jpg)
+
+Image absolute: ![logo](https://example.com/logo.png)
+

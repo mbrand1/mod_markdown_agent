@@ -60,6 +60,7 @@ typedef struct {
  * @param pool      APR pool for all allocations (output buffer lives here)
  * @param html      Input HTML bytes (need not be NUL-terminated)
  * @param html_len  Length of html in bytes
+ * @param base_url  Base URL for resolving relative href/src (may be NULL)
  * @param opts      Conversion options (may be NULL → all defaults/off)
  * @param out_len   Output: length of returned markdown buffer in bytes
  *
@@ -74,6 +75,7 @@ typedef struct {
 char *html2md_convert(apr_pool_t   *pool,
                       const char   *html,
                       apr_size_t    html_len,
+                      const char   *base_url,
                       const html2md_opts *opts,
                       apr_size_t   *out_len);
 
