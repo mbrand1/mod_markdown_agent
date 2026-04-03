@@ -25,12 +25,14 @@ ENV/
 *.slo
 .libs/
 
-# Autoconf
+# Autoconf generated
 autom4te.cache/
 config.log
 config.status
+configure~
 Makefile
 Makefile.orig
+a.out
 
 # Dist
 *.tar.gz
