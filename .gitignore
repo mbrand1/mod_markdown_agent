@@ -1,0 +1,26 @@
+# Custom files to ignore
+notes*.txt
+*_old*.html
+*_bk*.html
+*_old*.py
+*_bk*.py
+store.db
+.*.swp
+scratch/
+
+# virtualenv
+.venv
+venv/
+ENV/
+.envrc
+
+# AI
+.claude/
+
+# Build artifacts
+*.o
+*.lo
+*.la
+*.so
+*.slo
+.libs/
