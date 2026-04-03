@@ -1,0 +1,137 @@
+# mod_markdown_agent
+
+A native Apache output filter module that converts HTML responses to Markdown
+on-the-fly for AI agents using HTTP content negotiation.
+
+When a client sends `Accept: text/markdown`, the module intercepts the HTML
+response, converts it to Markdown, and returns it with
+`Content-Type: text/markdown` and `Vary: Accept`. Normal browser requests
+pass through completely untouched.
+
+Inspired by [Cloudflare's Markdown for Agents](https://blog.cloudflare.com/markdown-for-agents/),
+built for self-hosted Apache.
+
+## Why?
+
+AI agents (Claude Code, OpenCode, Cursor, etc.) consume web content as part of
+their workflow. Markdown is ~80-85% fewer tokens than equivalent HTML, meaning
+lower cost and less context window consumption. The emerging standard is for
+agents to request `text/markdown` via the `Accept` header and for servers to
+respond accordingly.
+
+## Dependencies
+
+- Apache 2.4+ with `apxs`
+- libxml2 (development headers)
+- APR (bundled with Apache)
+
+Pure C. No npm, no runtime, no interpreter.
+
+## Build & Install
+
+```bash
+make
+sudo make install
+/usr/local/apache/bin/apachectl configtest
+sudo /usr/local/apache/bin/apachectl graceful
+```
+
+Adjust `APXS` and `LIBXML2_INC` in the Makefile if your paths differ:
+
+```makefile
+APXS        = /usr/local/apache/bin/apxs
+LIBXML2_INC = /usr/include/libxml2
+```
+
+## Configuration
+
+The module provides five directives, all `On`/`Off` flags valid in
+`<Directory>`, `<Location>`, and `<VirtualHost>` contexts:
+
+| Directive | Default | Description |
+|---|---|---|
+| `MarkdownAgent` | Off | Master enable/disable |
+| `MarkdownAgentExtract` | Off | Strip nav/header/footer/aside + boilerplate patterns |
+| `MarkdownAgentLinks` | On | Include `[text](url)` links |
+| `MarkdownAgentImages` | On | Include `![alt](src)` images |
+| `MarkdownAgentTokenHeader` | Off | Emit `x-markdown-tokens` response header |
+
+Example:
+
+```apache
+LoadModule markdown_agent_module modules/mod_markdown_agent.so
+
+<Directory "/var/www/docs">
+    MarkdownAgent            On
+    MarkdownAgentExtract     On
+    MarkdownAgentLinks       On
+    MarkdownAgentImages      Off
+    MarkdownAgentTokenHeader On
+</Directory>
+```
+
+See `example.conf` for a full annotated configuration including SSL VirtualHost.
+
+## Testing
+
+```bash
+# Smoke test — should return Content-Type: text/markdown and Vary: Accept
+make test URL=http://localhost/yourpage.html
+
+# Or manually:
+curl -s -H "Accept: text/markdown" http://localhost/yourpage.html
+```
+
+## How It Works
+
+The module registers an Apache output filter (`AP_FTYPE_RESOURCE`) that:
+
+1. Checks if the client sent `Accept: text/markdown`
+2. Accumulates the full HTML response body
+3. Parses it with libxml2's `htmlReadMemory()` (handles malformed HTML)
+4. Walks the DOM tree, converting elements to Markdown syntax
+5. Rewrites response headers and sends the Markdown body
+
+Because it's a filter (not a handler), it works with any content source —
+static files, CGI, proxied backends, PHP, etc.
+
+## Element Coverage
+
+### Block Elements
+
+| HTML | Markdown |
+|---|---|
+| `<h1>`..`<h6>` | `# ` .. `###### ` (ATX style) |
+| `<p>` | Paragraph with surrounding blank lines |
+| `<pre><code>` | Fenced code block with language detection |
+| `<ul>` / `<ol>` / `<li>` | `- ` / `1. ` with nested indentation |
+| `<hr>` | `---` |
+| `<br>` | Two trailing spaces + newline |
+| `<blockquote>` | *In progress* |
+| `<table>` | *In progress* |
+
+### Inline Elements
+
+| HTML | Markdown |
+|---|---|
+| `<strong>`, `<b>` | `**text**` |
+| `<em>`, `<i>` | `*text*` |
+| `<del>`, `<s>`, `<strike>` | `~~text~~` |
+| `<code>` (inline) | `` `text` `` |
+| `<a href="...">` | `[text](url)` |
+| `<img>` | `![alt](src)` |
+| `<sub>` | `~text~` |
+| `<sup>` | `^text^` |
+
+### Extract Mode
+
+When `MarkdownAgentExtract On`, the module strips boilerplate before
+converting: `<nav>`, `<header>`, `<footer>`, `<aside>`, and elements
+whose class/id contains common patterns like `sidebar`, `cookie`,
+`banner`, `advertisement`, `widget`, `popup`, etc.
+
+`<script>`, `<style>`, `<noscript>`, and `<template>` are always dropped.
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.
