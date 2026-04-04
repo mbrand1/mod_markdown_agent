@@ -14,7 +14,7 @@ make                                                          # compile via apxs
 sudo make install                                             # install .so + add LoadModule
 /usr/local/apache/bin/apachectl configtest                    # verify config
 sudo /usr/local/apache/bin/apachectl graceful                 # reload Apache
-make test URL=https://scooby.netsville.com/testfile.html      # smoke test with curl
+make test URL=https://example.com/testfile.html      # smoke test with curl
 make regression                                               # run all regression tests
 make dist                                                     # create source tarball
 make clean                                                    # remove build artifacts
@@ -27,7 +27,7 @@ Build dependencies: libxml2 (`-lxml2`, headers at `/usr/include/libxml2`), APR (
 
 ## Regression Tests
 
-Test HTML files and their expected markdown output live in `testfiles/`. Each `.html` file has a corresponding `.expected` file. `make regression` curls each test through the live server and diffs against expected output. Default `BASE_URL` is `https://scooby.netsville.com`; override with `make regression BASE_URL=http://...`.
+Test HTML files and their expected markdown output live in `testfiles/`. Each `.html` file has a corresponding `.expected` file. `make regression` curls each test through the live server and diffs against expected output. Default `BASE_URL` is `https://example.com`; override with `make regression BASE_URL=http://...`.
 
 Test files must also be deployed to the docroot (`/usr/local/apache/htdocs/`). After changing parser behavior, regenerate expected output for affected tests and verify by inspection before committing.
 
@@ -40,8 +40,8 @@ Test files must also be deployed to the docroot (`/usr/local/apache/htdocs/`). A
 - Logs: `/usr/local/apache/logs/domain-{access,error}_log`
 - SSL certs: `/usr/local/apache/ssl/domain.{crt,key}`
 - No `a2ensite`/`a2enmod` -- all manual config editing
-- VirtualHosts use explicit server IP (e.g. `69.55.64.29:443`)
-- Test docroot: `/usr/local/apache/htdocs/` (scooby.netsville.com)
+- VirtualHosts use explicit server IP (e.g. `192.168.1.10:443`)
+- Test docroot: `/usr/local/apache/htdocs/`
 - SSL VirtualHosts must include the hardening directives shown in `example.conf`
 
 ## Architecture

@@ -65,10 +65,10 @@ test:
 
 # -----------------------------------------------------------------------
 # Regression tests: compare live output against known-good expected files
-# Usage: make regression BASE_URL=https://scooby.netsville.com
+# Usage: make regression BASE_URL=https://example.com
 # Requires test HTML files deployed to the docroot.
 # -----------------------------------------------------------------------
-BASE_URL = https://scooby.netsville.com
+BASE_URL = https://example.com
 TESTDIR  = testfiles
 
 regression:

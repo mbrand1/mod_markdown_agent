@@ -13,6 +13,12 @@ built for self-hosted Apache.
 
 ## Why?
 
+Wrote an early version of this and decided to let Claude take a whack at it and
+flesh it out completely so here you go...  It's something I'm using in-house that
+sits in front of our own websites.  **But I still consider it in the alpha stage!**
+
+## What's it for?
+
 AI agents (Claude Code, OpenCode, Cursor, etc.) consume web content as part of
 their workflow. Markdown is ~80-85% fewer tokens than equivalent HTML, meaning
 lower cost and less context window consumption. The emerging standard is for
