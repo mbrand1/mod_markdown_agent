@@ -63,6 +63,7 @@ and `<VirtualHost>` contexts:
 | `MarkdownAgentImages` | On | Include `![alt](src)` images |
 | `MarkdownAgentTokenHeader` | Off | Emit `x-markdown-tokens` response header |
 | `MarkdownAgentTitleH1` | Off | Emit HTML `<title>` as leading `# heading` |
+| `MarkdownAgentDebug` | Off | Enable debug logging for filter operations |
 | `MarkdownAgentContentUsage` | *(unset)* | Emit `Content-Usage` header ([IETF aipref](https://datatracker.ietf.org/wg/aipref/about/)) |
 
 Example:

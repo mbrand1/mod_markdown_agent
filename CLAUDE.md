@@ -76,6 +76,7 @@ All are `FLAG` type (On/Off), valid in `<Directory>`, `<Location>`, `<VirtualHos
 | `MarkdownAgentImages` | Include `![alt](src)` images (default On when module enabled) |
 | `MarkdownAgentTokenHeader` | Emit `x-markdown-tokens` response header |
 | `MarkdownAgentTitleH1` | Emit HTML `<title>` as leading `# heading` before body content |
+| `MarkdownAgentDebug` | Enable debug logging for filter operations |
 | `MarkdownAgentContentUsage` | Emit `Content-Usage` header value (IETF aipref, string, e.g. `"bots=y, train-ai=y"`) |
 
 ## Design Notes

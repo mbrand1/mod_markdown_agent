@@ -36,6 +36,7 @@ typedef struct {
     int images;         /* MarkdownAgentImages On|Off   */
     int token_header;   /* MarkdownAgentTokenHeader On|Off */
     int title_as_h1;    /* MarkdownAgentTitleH1 On|Off     */
+    int debug;          /* MarkdownAgentDebug On|Off        */
     const char *content_usage; /* MarkdownAgentContentUsage string */
 } mma_dir_conf;
 
@@ -65,6 +66,7 @@ static void *mma_create_dir_conf(apr_pool_t *p, char *path)
     conf->images       = -1;
     conf->token_header = -1;
     conf->title_as_h1  = -1;
+    conf->debug        = -1;
     conf->content_usage = NULL;
     return conf;
 }
@@ -85,6 +87,7 @@ static void *mma_merge_dir_conf(apr_pool_t *p, void *base, void *add)
     MERGE_FLAG(child, parent, images);
     MERGE_FLAG(child, parent, token_header);
     MERGE_FLAG(child, parent, title_as_h1);
+    MERGE_FLAG(child, parent, debug);
     merged->content_usage = child->content_usage
                           ? child->content_usage : parent->content_usage;
 
@@ -124,6 +127,11 @@ static const char *cmd_title_as_h1(cmd_parms *cmd, void *dcfg, int flag)
     ((mma_dir_conf *)dcfg)->title_as_h1 = flag;
     return NULL;
 }
+static const char *cmd_debug(cmd_parms *cmd, void *dcfg, int flag)
+{
+    ((mma_dir_conf *)dcfg)->debug = flag;
+    return NULL;
+}
 static const char *cmd_content_usage(cmd_parms *cmd, void *dcfg,
                                      const char *val)
 {
@@ -144,6 +152,8 @@ static const command_rec mma_cmds[] = {
                  "Emit x-markdown-tokens response header (On|Off)"),
     AP_INIT_FLAG("MarkdownAgentTitleH1",    cmd_title_as_h1,  NULL, OR_OPTIONS,
                  "Emit HTML <title> as # heading before body (On|Off)"),
+    AP_INIT_FLAG("MarkdownAgentDebug",       cmd_debug,        NULL, OR_OPTIONS,
+                 "Enable debug logging for filter operations (On|Off)"),
     AP_INIT_TAKE1("MarkdownAgentContentUsage", cmd_content_usage, NULL, OR_OPTIONS,
                   "Content-Usage header value (IETF aipref, e.g. \"bots=y, train-ai=y\")"),
     { NULL }
@@ -196,10 +206,16 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
         ctx   = apr_pcalloc(r->pool, sizeof(mma_filter_ctx));
         ctx->accum = apr_brigade_create(r->pool, f->c->bucket_alloc);
         f->ctx = ctx;
-        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                      "mod_markdown_agent: filter invoked for %s "
-                      "(content-type: %s)",
-                      r->uri, r->content_type ? r->content_type : "(null)");
+        {
+            mma_dir_conf *dc = ap_get_module_config(r->per_dir_config,
+                                                     &markdown_agent_module);
+            if (dc->debug == 1)
+                ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                              "mod_markdown_agent: filter invoked for %s "
+                              "(content-type: %s)",
+                              r->uri,
+                              r->content_type ? r->content_type : "(null)");
+        }
     }
 
     /* Walk the incoming brigade, reading each data bucket into our
@@ -240,23 +256,28 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 
     /* --- We have the full response body. Convert it. --- */
 
+    /* Read config early so debug flag is available for all log points */
+    mma_dir_conf *conf = ap_get_module_config(r->per_dir_config,
+                                               &markdown_agent_module);
+
     /* Flatten accumulated brigade into a contiguous buffer */
     apr_size_t  html_len = 0;
     char       *html_buf = NULL;
 
     rv = apr_brigade_pflatten(ctx->accum, &html_buf, &html_len, r->pool);
 
-    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                  "mod_markdown_agent: flattened %"APR_SIZE_T_FMT
-                  " bytes from brigade (rv=%d, first bytes: %s)",
-                  html_len, rv,
-                  (html_len >= 4)
-                  ? apr_psprintf(r->pool, "%02x %02x %02x %02x",
-                      (unsigned char)html_buf[0],
-                      (unsigned char)html_buf[1],
-                      (unsigned char)html_buf[2],
-                      (unsigned char)html_buf[3])
-                  : "(too short)");
+    if (conf->debug == 1)
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                      "mod_markdown_agent: flattened %"APR_SIZE_T_FMT
+                      " bytes from brigade (rv=%d, first bytes: %s)",
+                      html_len, rv,
+                      (html_len >= 4)
+                      ? apr_psprintf(r->pool, "%02x %02x %02x %02x",
+                          (unsigned char)html_buf[0],
+                          (unsigned char)html_buf[1],
+                          (unsigned char)html_buf[2],
+                          (unsigned char)html_buf[3])
+                      : "(too short)");
     if (rv != APR_SUCCESS) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, rv, r,
                       "mod_markdown_agent: brigade flatten failed");
@@ -303,8 +324,6 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     }
 
     /* Build options from config */
-    mma_dir_conf *conf = ap_get_module_config(r->per_dir_config,
-                                               &markdown_agent_module);
     html2md_opts opts;
     opts.extract      = (conf->extract      == 1);
     opts.links        = (conf->links        != 0);  /* On by default */
@@ -322,10 +341,11 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     char       *md_buf  = html2md_convert(r->pool, html_buf, html_len,
                                            base_url, &opts, &md_len);
 
-    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                  "mod_markdown_agent: convert returned %s, md_len=%"
-                  APR_SIZE_T_FMT,
-                  md_buf ? "ok" : "NULL", md_len);
+    if (conf->debug == 1)
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                      "mod_markdown_agent: convert returned %s, md_len=%"
+                      APR_SIZE_T_FMT,
+                      md_buf ? "ok" : "NULL", md_len);
 
     if (!md_buf) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -366,10 +386,11 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     APR_BRIGADE_INSERT_TAIL(out,
         apr_bucket_eos_create(f->c->bucket_alloc));
 
-    ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
-                  "mod_markdown_agent: converted %"APR_SIZE_T_FMT
-                  " bytes HTML -> %"APR_SIZE_T_FMT" bytes markdown",
-                  html_len, md_len);
+    if (conf->debug == 1)
+        ap_log_rerror(APLOG_MARK, APLOG_DEBUG, 0, r,
+                      "mod_markdown_agent: converted %"APR_SIZE_T_FMT
+                      " bytes HTML -> %"APR_SIZE_T_FMT" bytes markdown",
+                      html_len, md_len);
 
     ap_remove_output_filter(f);
     return ap_pass_brigade(f->next, out);
