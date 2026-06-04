@@ -8,6 +8,9 @@ store.db
 .*.swp
 scratch/
 
+# IDE
+.vscode/
+
 # virtualenv
 .venv
 venv/
