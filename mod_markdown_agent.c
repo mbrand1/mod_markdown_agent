@@ -18,6 +18,7 @@
 #include "http_config.h"
 #include "http_log.h"
 #include "http_protocol.h"
+#include "http_request.h"
 #include "ap_config.h"
 #include "apr_strings.h"
 #include "apr_buckets.h"
@@ -200,6 +201,16 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
     mma_filter_ctx *ctx = f->ctx;
     apr_bucket     *b;
     apr_status_t    rv;
+
+    /* Content-Type is unknown at insert_filter time for dynamic responses,
+     * so gate here — the canonical Apache pattern (cf. mod_deflate) — now
+     * that the handler has run and r->content_type is populated.  Self-remove
+     * for anything that isn't an HTML 200: robots.txt, sitemap.xml, JSON,
+     * redirects, error pages, etc.  Passes the brigade through untouched. */
+    if (!response_is_html(r) || r->status != HTTP_OK) {
+        ap_remove_output_filter(f);
+        return ap_pass_brigade(f->next, bb);
+    }
 
     /* Allocate context on first call */
     if (!ctx) {

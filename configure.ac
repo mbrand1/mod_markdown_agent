@@ -1,7 +1,7 @@
 dnl configure.ac for mod_markdown_agent
 dnl Run: autoreconf -i && ./configure && make && make install
 
-AC_INIT([mod_markdown_agent], [0.2.0], [brandon@netsville.com])
+AC_INIT([mod_markdown_agent], [0.2.1], [brandon@netsville.com])
 AC_CONFIG_SRCDIR([mod_markdown_agent.c])
 
 dnl --- C compiler ---
