@@ -374,7 +374,9 @@ static apr_status_t mma_output_filter(ap_filter_t *f, apr_bucket_brigade *bb)
 
     /* Update response headers */
     ap_set_content_type(r, "text/markdown; charset=utf-8");
-    apr_table_set(r->headers_out, "Vary", "Accept");
+    /* Merge, don't set: preserve any Vary the origin already sent
+     * (e.g. Cookie, Origin) so caches don't lose those dimensions. */
+    apr_table_merge(r->headers_out, "Vary", "Accept");
 
     /* Optionally emit token count heuristic (~4 chars/token) */
     if (conf->token_header == 1) {
