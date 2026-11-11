@@ -45,9 +45,10 @@ dist:
 	cp configure $(DISTNAME)/
 	cp install-sh $(DISTNAME)/ 2>/dev/null || true
 	cp example.conf README.md LICENSE $(DISTNAME)/
-	tar czf $(DISTNAME).tar.gz $(DISTNAME)
+	mkdir -p dist
+	tar czf dist/$(DISTNAME).tar.gz $(DISTNAME)
 	rm -rf $(DISTNAME)
-	@echo "Created $(DISTNAME).tar.gz"
+	@echo "Created dist/$(DISTNAME).tar.gz"
 
 reload:
 	$(APACHECTL) graceful

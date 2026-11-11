@@ -39,6 +39,7 @@ a.out
 
 # Dist
 *.tar.gz
+dist/
 
 # Local make overrides (e.g. BASE_URL for regression)
 local.mk

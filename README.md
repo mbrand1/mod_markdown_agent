@@ -53,7 +53,7 @@ non-standard locations:
 To create a source tarball for distribution:
 
 ```bash
-make dist    # produces mod_markdown_agent-VERSION.tar.gz
+make dist    # produces dist/mod_markdown_agent-VERSION.tar.gz
 ```
 
 ## Configuration
