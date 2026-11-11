@@ -91,9 +91,9 @@ See `example.conf` for a full annotated configuration including SSL VirtualHost.
 
 ## Triggering by User-Agent
 
-The module triggers on `Accept: text/markdown`. In practice, today's AI
+The module triggers on `Accept: text/markdown`. As of mid-2026, most AI
 fetchers don't send that header — user-triggered fetchers like `Claude-User`,
-`ChatGPT-User`, and `Perplexity-User` request with `Accept: */*`. Until
+`ChatGPT-User`, and `Perplexity-User` typically request with `Accept: */*`. Until
 content negotiation is widely adopted, you can opt those agents in by injecting
 the header for matching User-Agents, using stock `mod_setenvif` + `mod_headers`
 (no module change required):
@@ -105,6 +105,23 @@ RequestHeader merge Accept "text/markdown" env=ai_fetcher
 
 Use `merge`, not `append` — it adds `text/markdown` only if not already in the
 `Accept` list, avoiding a duplicated value.
+
+**Caching:** once User-Agent decides the format, the response varies by
+User-Agent, but the module only sends `Vary: Accept`, and only on the Markdown
+response. A shared cache keys on the client's *original* headers, so it could
+store the Markdown served to `Claude-User` (sent `Accept: */*`) and hand it to
+any other client sending `*/*`. Mark both variants, unconditionally — not with
+`env=ai_fetcher`, or the HTML variant goes unmarked:
+
+```apache
+Header merge Vary Accept
+Header merge Vary User-Agent
+```
+
+Use two separate `merge` lines; a single `"Accept, User-Agent"` value is
+compared as one token and would duplicate `Accept`. Note that
+`Vary: User-Agent` fragments shared caches heavily — if a CDN or page cache sits
+in front of the site, consider bypassing it for these agents instead.
 
 Scope this to **user-triggered fetchers** (an agent acting for a live human on a
 specific URL). Do **not** match search/index crawlers such as `Googlebot`,
@@ -129,10 +146,16 @@ The last two fields are the request's `Accept` and the response `Content-Type`:
 # requests served as Markdown
 grep '"text/markdown"$' logs/access_log
 
-# requests that ASKED for Markdown but did NOT get it (conversion bailed:
-# compressed input, non-HTML, redirect, error page, etc.)
-grep '"text/markdown[^"]*" "text/html' logs/access_log
+# requests that ASKED for Markdown but got HTML back (conversion bailed:
+# compressed input, redirect, error page, etc.)
+grep -E '"[^"]*text/markdown[^"]*" "text/html[^"]*"$' logs/access_log
 ```
+
+`%{Accept}i` logs the header *after* any `RequestHeader` rewrite, so
+User-Agent-injected requests show up as `*/*, text/markdown` — the second
+pattern matches `text/markdown` anywhere in the field for that reason. Requests
+where the response was some other non-HTML type (JSON, XML, images) are passed
+through untouched and won't appear in either list.
 
 ## Testing
 
