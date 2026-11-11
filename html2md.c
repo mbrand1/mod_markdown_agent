@@ -115,6 +115,16 @@ static const char *DROP_TAGS[] = {
     NULL
 };
 
+/* Generic block-level containers: emit a paragraph break around them.
+ * (Elements with their own handlers — p, h1-h6, ul, table, ... — are
+ * dispatched before this list is consulted.) */
+static const char *BLOCK_TAGS[] = {
+    "div", "section", "article", "main", "header", "footer", "nav",
+    "aside", "figure", "figcaption", "form", "fieldset", "address",
+    "details", "summary", "dl", "dt", "dd", "hgroup", "center",
+    NULL
+};
+
 /* Tags dropped in extract mode */
 static const char *EXTRACT_DROP_TAGS[] = {
     "nav", "header", "footer", "aside",
@@ -190,6 +200,13 @@ typedef struct {
     int                in_pre;        /* inside <pre> — preserve whitespace */
     int                last_was_nl;   /* avoid double blank lines */
     char               last_char;     /* last character written to output, 0 at start */
+    int                nl_run;        /* consecutive trailing newlines in output */
+    int                pending_space; /* whitespace seen but not yet emitted */
+    int                inline_depth;  /* >0 inside a single-line construct
+                                       * (link, emphasis, heading, list item,
+                                       * table cell): no block breaks here */
+    int                just_opened;   /* last output was an opening delimiter
+                                       * ("[", "**", ...): drop leading space */
 } walk_ctx;
 
 /* =========================================================================
@@ -242,18 +259,59 @@ static void ensure_blank_line(walk_ctx *ctx)
 static void emit(walk_ctx *ctx, const char *s)
 {
     if (!s || !*s) return;
+    ctx->just_opened = 0;
     buf_puts(ctx->out, s);
     apr_size_t len   = strlen(s);
     ctx->last_char   = s[len - 1];
     ctx->last_was_nl = (ctx->last_char == '\n');
+
+    /* Track the run of trailing newlines so block_break() can tell
+     * whether a blank line is already in place. */
+    apr_size_t nl = 0;
+    while (nl < len && s[len - 1 - nl] == '\n')
+        nl++;
+    ctx->nl_run = (nl == len) ? ctx->nl_run + (int)nl : (int)nl;
+
+    /* A newline supersedes any deferred inter-word space */
+    if (nl)
+        ctx->pending_space = 0;
 }
 
 /* Emit a space if needed before an inline delimiter — compensates for
  * emit_text() trimming trailing spaces before inline elements */
 static void ensure_space_before_inline(walk_ctx *ctx)
 {
-    if (ctx->last_char != '\0' && !isspace((unsigned char)ctx->last_char))
+    if (ctx->last_char != '\0' && !isspace((unsigned char)ctx->last_char)
+        && !ctx->just_opened)
         emit(ctx, " ");
+    ctx->pending_space = 0;
+}
+
+/* Emit an opening inline delimiter.  Whitespace right after it belongs
+ * outside the construct ("*text*", not "* text*"), and
+ * ensure_space_before_inline() has already put a space there. */
+static void open_inline(walk_ctx *ctx, const char *delim)
+{
+    emit(ctx, delim);
+    ctx->just_opened   = 1;
+    ctx->pending_space = 0;
+}
+
+/* Paragraph break for generic block containers (div, section, ...).
+ * Unlike ensure_blank_line() it is idempotent and does nothing at the
+ * start of output, so nested wrappers don't stack up newlines.  Inside
+ * a single-line construct it degrades to a word separator. */
+static void block_break(walk_ctx *ctx)
+{
+    if (ctx->inline_depth > 0) {
+        if (!ctx->just_opened)
+            ctx->pending_space = 1;
+        return;
+    }
+    if (ctx->last_char == '\0')
+        return;
+    while (ctx->nl_run < 2)
+        emit(ctx, "\n");
 }
 
 /* =========================================================================
@@ -282,7 +340,7 @@ static void emit_text(walk_ctx *ctx, const xmlChar *raw)
      * (or we're at the very start). Otherwise preserve the leading space
      * so "word <em>text</em> more" doesn't become "word**text**more". */
     int  was_ws = (ctx->last_char == '\0' || ctx->last_char == '\n'
-                || ctx->last_char == ' ');
+                || ctx->last_char == ' '  || ctx->just_opened);
 
     for (const char *src = s; *src; src++) {
         if (isspace((unsigned char)*src)) {
@@ -294,12 +352,23 @@ static void emit_text(walk_ctx *ctx, const xmlChar *raw)
         }
     }
     *dst = '\0';
-    /* Trim trailing space */
+    /* Trim trailing space, but remember it: if more text follows (e.g.
+     * "<span>a</span> <span>b</span>") the space is emitted then.  Closing
+     * delimiters don't flush it, so "<b>bold </b>" still gives "**bold**". */
+    int trailing_ws = (*s && isspace((unsigned char)s[strlen(s) - 1]));
     while (dst > buf && dst[-1] == ' ')
         *--dst = '\0';
 
-    if (*buf)
+    if (*buf) {
+        if (ctx->pending_space && buf[0] != ' '
+            && ctx->last_char != '\0'
+            && !isspace((unsigned char)ctx->last_char))
+            emit(ctx, " ");
+        ctx->pending_space = 0;
         emit(ctx, buf);
+    }
+    if (trailing_ws)
+        ctx->pending_space = 1;
 
     free(buf);
 }
@@ -326,7 +395,9 @@ static void handle_heading(walk_ctx *ctx, xmlNode *node, int level)
     emit(ctx, " ");          /* now last_char = ' ', last_was_nl = 0 */
 
     /* emit the text */
+    ctx->inline_depth++;
     walk_children(ctx, node);
+    ctx->inline_depth--;
     ensure_blank_line(ctx);
 }
 
@@ -347,9 +418,11 @@ static void handle_blockquote(walk_ctx *ctx, xmlNode *node)
 
     out_buf *saved_out = ctx->out;
 
-    ctx->out         = &tmp;
-    ctx->last_was_nl = 1;
-    ctx->last_char   = '\0';
+    ctx->out           = &tmp;
+    ctx->last_was_nl   = 1;
+    ctx->last_char     = '\0';
+    ctx->nl_run        = 0;
+    ctx->pending_space = 0;
 
     walk_children(ctx, node);
 
@@ -480,7 +553,9 @@ static void handle_li(walk_ctx *ctx, xmlNode *node)
     } else {
         emit(ctx, "- ");
     }
+    ctx->inline_depth++;
     walk_children(ctx, node);
+    ctx->inline_depth--;
     ensure_newline(ctx);
 }
 
@@ -498,16 +573,24 @@ static char *render_cell(walk_ctx *ctx, xmlNode *cell)
     out_buf *saved_out = ctx->out;
     int      saved_nl  = ctx->last_was_nl;
     char     saved_lc  = ctx->last_char;
+    int      saved_run = ctx->nl_run;
+    int      saved_ps  = ctx->pending_space;
 
-    ctx->out         = &tmp;
-    ctx->last_was_nl = 1;
-    ctx->last_char   = '\0';
+    ctx->out           = &tmp;
+    ctx->last_was_nl   = 1;
+    ctx->last_char     = '\0';
+    ctx->nl_run        = 0;
+    ctx->pending_space = 0;
 
+    ctx->inline_depth++;           /* cell text must stay on one line */
     walk_children(ctx, cell);
+    ctx->inline_depth--;
 
-    ctx->out         = saved_out;
-    ctx->last_was_nl = saved_nl;
-    ctx->last_char   = saved_lc;
+    ctx->out           = saved_out;
+    ctx->last_was_nl   = saved_nl;
+    ctx->last_char     = saved_lc;
+    ctx->nl_run        = saved_run;
+    ctx->pending_space = saved_ps;
 
     /* Flatten and strip leading/trailing whitespace */
     char *text = buf_flatten(&tmp);
@@ -646,33 +729,41 @@ static void handle_table(walk_ctx *ctx, xmlNode *node)
 static void handle_strong(walk_ctx *ctx, xmlNode *node)
 {
     ensure_space_before_inline(ctx);
-    emit(ctx, "**");
+    open_inline(ctx, "**");
+    ctx->inline_depth++;
     walk_children(ctx, node);
+    ctx->inline_depth--;
     emit(ctx, "**");
 }
 
 static void handle_em(walk_ctx *ctx, xmlNode *node)
 {
     ensure_space_before_inline(ctx);
-    emit(ctx, "*");
+    open_inline(ctx, "*");
+    ctx->inline_depth++;
     walk_children(ctx, node);
+    ctx->inline_depth--;
     emit(ctx, "*");
 }
 
 static void handle_del(walk_ctx *ctx, xmlNode *node)
 {
     ensure_space_before_inline(ctx);
-    emit(ctx, "~~");
+    open_inline(ctx, "~~");
+    ctx->inline_depth++;
     walk_children(ctx, node);
+    ctx->inline_depth--;
     emit(ctx, "~~");
 }
 
 static void handle_code_inline(walk_ctx *ctx, xmlNode *node)
 {
     ensure_space_before_inline(ctx);
-    emit(ctx, "`");
+    open_inline(ctx, "`");
     ctx->in_pre = 1;   /* preserve whitespace inside inline code */
+    ctx->inline_depth++;
     walk_children(ctx, node);
+    ctx->inline_depth--;
     ctx->in_pre = 0;
     emit(ctx, "`");
 }
@@ -680,33 +771,43 @@ static void handle_code_inline(walk_ctx *ctx, xmlNode *node)
 static void handle_sub(walk_ctx *ctx, xmlNode *node)
 {
     ensure_space_before_inline(ctx);
-    emit(ctx, "~");
+    open_inline(ctx, "~");
+    ctx->inline_depth++;
     walk_children(ctx, node);
+    ctx->inline_depth--;
     emit(ctx, "~");
 }
 
 static void handle_sup(walk_ctx *ctx, xmlNode *node)
 {
     ensure_space_before_inline(ctx);
-    emit(ctx, "^");
+    open_inline(ctx, "^");
+    ctx->inline_depth++;
     walk_children(ctx, node);
+    ctx->inline_depth--;
     emit(ctx, "^");
 }
 
 static void handle_a(walk_ctx *ctx, xmlNode *node)
 {
     if (!ctx->opts || !ctx->opts->links) {
-        walk_children(ctx, node);   /* drop href, keep text */
+        ctx->inline_depth++;
+        walk_children(ctx, node);
+        ctx->inline_depth--;   /* drop href, keep text */
         return;
     }
     xmlChar *href = xmlGetProp(node, BAD_CAST "href");
     if (!href) {
+        ctx->inline_depth++;
         walk_children(ctx, node);
+        ctx->inline_depth--;
         return;
     }
     ensure_space_before_inline(ctx);
-    emit(ctx, "[");
+    open_inline(ctx, "[");
+    ctx->inline_depth++;
     walk_children(ctx, node);
+    ctx->inline_depth--;
     emit(ctx, "](");
     emit(ctx, (char *)href);
     emit(ctx, ")");
@@ -797,8 +898,15 @@ static void walk_node(walk_ctx *ctx, xmlNode *node)
     else if (strcasecmp(tag, "sub")    == 0) handle_sub(ctx, node);
     else if (strcasecmp(tag, "sup")    == 0) handle_sup(ctx, node);
 
-    /* --- div, span, body, html, section, article, main, etc.
-           Just recurse — they carry no markdown meaning themselves --- */
+    /* --- Generic block containers: no markdown syntax of their own, but
+           their boundaries separate content (paragraph break) --- */
+    else if (tag_in_list(tag, BLOCK_TAGS)) {
+        block_break(ctx);
+        walk_children(ctx, node);
+        block_break(ctx);
+    }
+
+    /* --- span, body, html, unknown tags: just recurse --- */
     else {
         walk_children(ctx, node);
     }
