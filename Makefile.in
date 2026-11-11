@@ -67,8 +67,11 @@ test:
 # Regression tests: compare live output against known-good expected files
 # Usage: make regression BASE_URL=https://example.com
 # Requires test HTML files deployed to the docroot.
+# Put a local default in local.mk (gitignored), e.g.:
+#   BASE_URL = https://your.test.host
 # -----------------------------------------------------------------------
-BASE_URL = https://example.com
+-include local.mk
+BASE_URL ?= https://example.com
 TESTDIR  = testfiles
 
 regression:
